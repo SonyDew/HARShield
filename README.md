@@ -1,13 +1,40 @@
 # HARShield
 
-## SonyDev GitHub Marathon — Season 1
+**Status:** In Development · SonyDev GitHub Marathon, Day 2 (October 28, 2026)
 
-**Day:** Day 2 of 10  
-**Status:** Not Started — Placeholder Repository  
-**Planned development date:** October 28, 2026
+HARShield is a local Python CLI that removes common credentials from HTTP Archive (HAR) JSON files before sharing them. It does not send data over the network.
 
-### Purpose
+## Install
 
-Detect and redact sensitive data from HTTP Archive (HAR) files.
+Requires Python 3.10 or later. No runtime dependencies.
 
-> **Warning:** This repository does not yet contain working software.
+```sh
+python -m pip install .
+```
+
+## Usage
+
+```sh
+harshield session.har --output session.clean.har
+harshield session.har --check
+harshield session.har --output - > session.clean.har
+```
+
+`--check` exits with 0 when no supported redactions are needed, 1 when it finds fields to redact, and 2 for invalid input or file errors. Normal redaction exits with 0 on success and 2 on error. Existing output files are not replaced unless `--force` is specified. Input files are never modified. Files written by the CLI use mode 0600 on POSIX systems.
+
+## Redaction rules
+
+- Replaces values of sensitive headers and query parameters (for example, `Authorization`, `Cookie`, `access_token`, and `api_key`). Also checks the query in request and redirect URLs.
+- Replaces all cookie values, form parameter values, request body text, and response body text.
+- Removes URL fragments, URL userinfo, HAR comments, and nonstandard fields beginning with `_`.
+- Preserves other HAR metadata and non-sensitive values. The replacement string is `[REDACTED]`.
+
+**Limitations:** This is a best-effort filter, not a guarantee that a HAR is safe to publish. Tokens embedded in URL paths, arbitrary headers, filenames, page titles, or other unrecognized fields may remain. Review the sanitized file before sharing. HAR files larger than 50 MiB are rejected. The tool does not interpret JavaScript, decode nested payloads, or process merged capture formats. It does not verify the HAR against a formal schema.
+
+## Tests
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+The tests use only Python's standard library. No GitHub Actions are configured.
