@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -15,8 +16,6 @@ MAX_BYTES = 50 * 1024 * 1024
 
 
 def _write_secure(path: Path, content: str, force: bool) -> None:
-    if path.exists() and not force:
-        raise OSError("Output exists; use --force to replace it")
     temp_name = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -26,12 +25,26 @@ def _write_secure(path: Path, content: str, force: bool) -> None:
             temp_name = temp.name
             os.chmod(temp_name, 0o600)
             temp.write(content)
-        if path.exists() and not force:
-            raise OSError("Output exists; use --force to replace it")
-        os.replace(temp_name, path)
+        if force:
+            os.replace(temp_name, path)
+        else:
+            # Hard-link creation fails atomically if the destination exists,
+            # including dangling symlinks. Never replace a racing writer.
+            os.link(temp_name, path)
     finally:
         if temp_name and os.path.exists(temp_name):
             os.unlink(temp_name)
+
+
+def _reject_nonfinite(_value: str) -> None:
+    raise ValueError("Non-finite JSON number")
+
+
+def _parse_finite_float(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("Non-finite JSON number")
+    return number
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,8 +66,8 @@ def main(argv: list[str] | None = None) -> int:
         if len(raw) > MAX_BYTES:
             raise InvalidHAR("Input exceeds the 50 MiB limit")
         try:
-            doc = json.loads(raw)
-        except (ValueError, UnicodeError) as exc:
+            doc = json.loads(raw, parse_constant=_reject_nonfinite, parse_float=_parse_finite_float)
+        except (ValueError, UnicodeError, RecursionError) as exc:
             raise InvalidHAR("Invalid JSON input") from exc
         cleaned, count = redact_har(doc)
         if args.check:

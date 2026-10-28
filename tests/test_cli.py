@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from harshield.cli import main
 
@@ -76,6 +77,47 @@ class CLITests(unittest.TestCase):
         code, out, _ = self.run_cli("-o", "-")
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["log"]["entries"][0]["response"]["content"]["text"], "[REDACTED]")
+
+    def test_reject_nonfinite_json_without_writing(self):
+        for value in ("NaN", "Infinity", "-Infinity", "1e999", "-1e999"):
+            with self.subTest(value=value):
+                self.source.write_text('{"log":{"entries":[],"value":' + value + '}}', encoding="utf-8")
+                code, out, err = self.run_cli("-o", self.target)
+                self.assertEqual(code, 2)
+                self.assertEqual(out, "")
+                self.assertIn("Invalid JSON input", err)
+                self.assertFalse(self.target.exists())
+
+    def test_reject_excessively_nested_json_without_traceback(self):
+        nested = "[" * 1200 + "0" + "]" * 1200
+        self.source.write_text('{"log":{"entries":[],"extra":' + nested + '}}', encoding="utf-8")
+        code, out, err = self.run_cli("-o", self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertNotIn("Traceback", err)
+        self.assertFalse(self.target.exists())
+
+    def test_concurrent_output_creation_is_not_overwritten(self):
+        original_link = os.link
+
+        def racing_link(src, dst):
+            Path(dst).write_text("created-by-another-process", encoding="utf-8")
+            return original_link(src, dst)
+
+        with patch("harshield.cli.os.link", side_effect=racing_link):
+            code, _, err = self.run_cli("-o", self.target)
+        self.assertEqual(code, 2)
+        self.assertEqual(self.target.read_text(), "created-by-another-process")
+        self.assertIn("could not read or write", err)
+        self.assertEqual(list(self.root.glob(".harshield-*")), [])
+
+    @unittest.skipUnless(os.name == "posix", "POSIX symlink behavior")
+    def test_dangling_output_symlink_is_not_overwritten(self):
+        self.target.symlink_to(self.root / "missing.har")
+        code, _, _ = self.run_cli("-o", self.target)
+        self.assertEqual(code, 2)
+        self.assertTrue(self.target.is_symlink())
+        self.assertFalse((self.root / "missing.har").exists())
 
     @unittest.skipUnless(os.name == "posix", "POSIX file permissions")
     def test_private_output_permissions(self):

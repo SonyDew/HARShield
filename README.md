@@ -20,16 +20,16 @@ harshield session.har --check
 harshield session.har --output - > session.clean.har
 ```
 
-`--check` exits with 0 when no supported redactions are needed, 1 when it finds fields to redact, and 2 for invalid input or file errors. Normal redaction exits with 0 on success and 2 on error. Existing output files are not replaced unless `--force` is specified. Input files are never modified. Files written by the CLI use mode 0600 on POSIX systems.
+`--check` exits with 0 when no supported redactions are needed, 1 when it finds fields to redact, and 2 for invalid input or file errors. Normal redaction exits with 0 on success and 2 on error. Without `--force`, output creation fails if the path already exists, including if another process creates it during writing. This requires a filesystem that supports hard links. With `--force`, the replacement is atomic. Input files are never modified. Files written by the CLI use mode 0600 on POSIX systems.
 
 ## Redaction rules
 
-- Replaces values of sensitive headers and query parameters (for example, `Authorization`, `Cookie`, `access_token`, and `api_key`). Also checks the query in request and redirect URLs.
-- Replaces all cookie values, form parameter values, request body text, and response body text.
+- Replaces values of sensitive headers and query parameters (for example, `Authorization`, `Cookie`, `access_token`, and `api_key`). Also checks request and redirect URL queries, including semicolon-separated parameters.
+- Replaces all cookie values, form parameter values, request body text, and response body text. Redacts `Link` and `Refresh` header values and checks `Content-Location` URLs.
 - Removes URL fragments, URL userinfo, HAR comments, and nonstandard fields beginning with `_`.
 - Preserves other HAR metadata and non-sensitive values. The replacement string is `[REDACTED]`.
 
-**Limitations:** This is a best-effort filter, not a guarantee that a HAR is safe to publish. Tokens embedded in URL paths, arbitrary headers, filenames, page titles, or other unrecognized fields may remain. Review the sanitized file before sharing. HAR files larger than 50 MiB are rejected. The tool does not interpret JavaScript, decode nested payloads, or process merged capture formats. It does not verify the HAR against a formal schema.
+**Limitations:** This is a best-effort filter, not a guarantee that a HAR is safe to publish. Tokens embedded in URL paths, arbitrary headers, filenames, page titles, or other unrecognized fields may remain. Review the sanitized file before sharing. HAR files larger than 50 MiB, invalid JSON numbers, and excessively nested input are rejected. The tool does not interpret JavaScript, decode nested payloads, or process merged capture formats. It does not verify the HAR against a formal schema.
 
 ## Tests
 

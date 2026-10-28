@@ -12,7 +12,7 @@ _SENSITIVE = (
     "token", "apikey", "accesskey", "privatekey", "sessionid", "sessionkey",
     "credential", "cookie", "csrf", "xsrf", "signature", "jwt",
 )
-_AUTH_VALUE = re.compile(r"^\s*(?:bearer|basic|digest)\s+", re.IGNORECASE)
+_AUTH_VALUE = re.compile(r"^\s*(?:bearer|basic|digest|token)\s+", re.IGNORECASE)
 
 
 class InvalidHAR(ValueError):
@@ -21,9 +21,15 @@ class InvalidHAR(ValueError):
 
 def sensitive_name(name: str) -> bool:
     compact = re.sub(r"[^a-z0-9]", "", name.lower())
-    return any(part in compact for part in _SENSITIVE) or compact in {
-        "key", "code", "sig", "otp", "pin", "state", "auth",
-    }
+    parts = set(re.findall(r"[a-z0-9]+", name.lower()))
+    return (
+        any(part in compact for part in _SENSITIVE)
+        or compact in {"key", "code", "sig", "otp", "pin", "state", "auth", "session"}
+        or "auth" in parts
+        or "session" in parts
+        or compact in {"xauth", "xsession"}
+        or compact.endswith(("auth", "session"))
+    )
 
 
 def _replace(item: dict, key: str, stats: list[int]) -> None:
@@ -60,7 +66,9 @@ def _url(value: str, stats: list[int]) -> str:
             changed = True
     query = parts.query
     if query:
-        pairs = parse_qsl(query, keep_blank_values=True)
+        # Some HAR producers use semicolons as query separators. Treating them
+        # as data can leave credentials after an ordinary parameter untouched.
+        pairs = parse_qsl(query.replace(";", "&"), keep_blank_values=True)
         new_pairs = []
         for name, val in pairs:
             if sensitive_name(name) and val and val != MARKER:
@@ -93,7 +101,10 @@ def _items(parent: dict, field: str, stats: list[int], *, kind: str) -> None:
         elif kind == "header" and isinstance(item.get("value"), str):
             if _AUTH_VALUE.match(item["value"]):
                 _replace(item, "value", stats)
-            elif name.lower() in {"location", "referer", "referrer"}:
+            elif name.lower() in {"link", "refresh"}:
+                # These headers can contain several URLs or nonstandard redirect syntax.
+                _replace(item, "value", stats)
+            elif name.lower() in {"location", "content-location", "referer", "referrer"}:
                 item["value"] = _url(item["value"], stats)
         if kind == "param":
             _replace(item, "fileName", stats)
@@ -101,6 +112,13 @@ def _items(parent: dict, field: str, stats: list[int], *, kind: str) -> None:
 
 def redact_har(document: object) -> tuple[dict, int]:
     """Return a redacted copy and the number of modified or removed fields."""
+    try:
+        return _redact_har(document)
+    except RecursionError as exc:
+        raise InvalidHAR("HAR nesting is too deep") from exc
+
+
+def _redact_har(document: object) -> tuple[dict, int]:
     if not isinstance(document, dict) or not isinstance(document.get("log"), dict):
         raise InvalidHAR("Expected a HAR log object")
     log = document["log"]

@@ -115,6 +115,59 @@ class RedactionTests(unittest.TestCase):
         self.assertNotIn("secret", str(headers))
         self.assertIn("lang=en", headers[0]["value"])
 
+    def test_custom_auth_and_session_headers(self):
+        obj = sample()
+        obj["log"]["entries"][0]["request"]["headers"] = [
+            {"name": "X-Auth", "value": "secret-one"},
+            {"name": "X-Session", "value": "secret-two"},
+            {"name": "xAuth", "value": "secret-three"},
+            {"name": "X-Author", "value": "public"},
+            {"name": "X-Custom", "value": "Token secret-four"},
+        ]
+        clean, _ = redact_har(obj)
+        headers = clean["log"]["entries"][0]["request"]["headers"]
+        self.assertEqual([h["value"] for h in headers[:3]], ["[REDACTED]"] * 3)
+        self.assertEqual(headers[3]["value"], "public")
+        self.assertEqual(headers[4]["value"], "[REDACTED]")
+
+    def test_semicolon_separated_query_credentials(self):
+        obj = sample()
+        obj["log"]["entries"][0]["request"]["url"] = (
+            "https://example.test/?lang=en;token=secret&search=hello"
+        )
+        clean, _ = redact_har(obj)
+        url = clean["log"]["entries"][0]["request"]["url"]
+        self.assertNotIn("secret", url)
+        self.assertIn("lang=en", url)
+        self.assertIn("search=hello", url)
+        self.assertEqual(redact_har(clean)[1], 0)
+
+    def test_link_refresh_and_content_location(self):
+        obj = sample()
+        obj["log"]["entries"][0]["response"]["headers"] = [
+            {"name": "Link", "value": '<https://example.test/?token=secret>; rel="next"'},
+            {"name": "Refresh", "value": "0;url=https://example.test/?token=secret"},
+            {"name": "Content-Location", "value": "https://example.test/?token=secret&lang=en"},
+        ]
+        clean, _ = redact_har(obj)
+        headers = clean["log"]["entries"][0]["response"]["headers"]
+        self.assertEqual(headers[0]["value"], "[REDACTED]")
+        self.assertEqual(headers[1]["value"], "[REDACTED]")
+        self.assertIn("lang=en", headers[2]["value"])
+        self.assertNotIn("secret", str(headers))
+        again, count = redact_har(clean)
+        self.assertEqual(count, 0)
+        self.assertEqual(clean, again)
+
+    def test_excessive_nesting_raises_invalid_har(self):
+        obj = sample()
+        nested = {"value": "public"}
+        for _ in range(700):
+            nested = [nested]
+        obj["log"]["entries"][0]["trace"] = nested
+        with self.assertRaisesRegex(InvalidHAR, "nesting"):
+            redact_har(obj)
+
     def test_invalid_url(self):
         obj = sample()
         obj["log"]["entries"][0]["request"]["url"] = "http://[invalid/"
