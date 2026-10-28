@@ -175,5 +175,45 @@ class RedactionTests(unittest.TestCase):
             redact_har(obj)
 
 
+    def test_authentication_challenges_are_redacted(self):
+        obj = sample()
+        obj["log"]["entries"][0]["response"]["headers"] = [
+            {"name": "WWW-Authenticate", "value": 'Digest realm="private", nonce="secret"'},
+            {"name": "proxy-authenticate", "value": 'Basic realm="private"'},
+            {"name": "Cache-Control", "value": "no-store"},
+        ]
+        clean, count = redact_har(obj)
+        headers = clean["log"]["entries"][0]["response"]["headers"]
+        self.assertEqual([header["value"] for header in headers],
+                         ["[REDACTED]", "[REDACTED]", "no-store"])
+        self.assertGreater(count, 0)
+        self.assertEqual(redact_har(clean)[1], 0)
+
+    def test_url_userinfo_and_fragment_without_query(self):
+        obj = sample()
+        obj["log"]["entries"][0]["request"]["url"] = "https://name:password@example.test/path#secret"
+        clean, _ = redact_har(obj)
+        url = clean["log"]["entries"][0]["request"]["url"]
+        self.assertNotIn("password", url)
+        self.assertNotIn("#secret", url)
+        self.assertEqual(redact_har(clean)[1], 0)
+
+    def test_nested_comments_and_vendor_fields_removed(self):
+        obj = sample()
+        obj["log"]["entries"][0]["request"]["_vendor"] = {"value": "secret"}
+        obj["log"]["entries"][0]["request"]["headers"][0]["comment"] = "secret"
+        clean, _ = redact_har(obj)
+        req = clean["log"]["entries"][0]["request"]
+        self.assertNotIn("_vendor", req)
+        self.assertNotIn("comment", req["headers"][0])
+        self.assertIn("_vendor", obj["log"]["entries"][0]["request"])
+
+    def test_invalid_header_list_is_rejected(self):
+        obj = sample()
+        obj["log"]["entries"][0]["response"]["headers"] = {"name": "Authorization", "value": "secret"}
+        with self.assertRaises(InvalidHAR):
+            redact_har(obj)
+
+
 if __name__ == "__main__":
     unittest.main()
