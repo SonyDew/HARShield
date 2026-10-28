@@ -1,6 +1,6 @@
 # HARShield
 
-**Status:** In Development · SonyDev GitHub Marathon, Day 2 (October 28, 2026)
+**Status:** Completed MVP (experimental) · SonyDev GitHub Marathon, Day 2 (October 28, 2026)
 
 HARShield is a local Python CLI that removes common credentials from HTTP Archive (HAR) JSON files before sharing them. It does not send data over the network.
 
@@ -25,7 +25,7 @@ harshield session.har --output - > session.clean.har
 ## Redaction rules
 
 - Replaces values of sensitive headers and query parameters (for example, `Authorization`, `Cookie`, `access_token`, and `api_key`). Also checks request and redirect URL queries, including semicolon-separated parameters.
-- Replaces all cookie values, form parameter values, request body text, and response body text. Redacts `Link` and `Refresh` header values and checks `Content-Location` URLs.
+- Replaces all cookie values, form parameter values, request body text, and response body text. Redacts `Link`, `Refresh`, `WWW-Authenticate`, and `Proxy-Authenticate` header values and checks `Content-Location` URLs.
 - Removes URL fragments, URL userinfo, HAR comments, and nonstandard fields beginning with `_`.
 - Preserves other HAR metadata and non-sensitive values. The replacement string is `[REDACTED]`.
 
@@ -38,3 +38,10 @@ python -m unittest discover -s tests -v
 ```
 
 The tests use only Python's standard library. No GitHub Actions are configured.
+
+## Development report — October 28, 2026
+
+- 36 unit tests passed on Python 3.13.5 (Linux).
+- Built and installed a wheel, then checked the installed CLI with a sample HAR and `--check`.
+- Verified that a sanitized output file was created with mode 0600 on Linux.
+- No tests were run on Windows or Python 3.10–3.12. No stable release has been tagged.
