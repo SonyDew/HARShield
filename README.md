@@ -44,4 +44,4 @@ The tests use only Python's standard library. No GitHub Actions are configured.
 - 36 unit tests passed on Python 3.13.5 (Linux).
 - Built and installed a wheel, then checked the installed CLI with a sample HAR and `--check`.
 - Verified that a sanitized output file was created with mode 0600 on Linux.
-- No tests were run on Windows or Python 3.10–3.12. No stable release has been tagged.
+- No tests were run on Windows or Python 3.10–3.12. The MVP remains experimental; this report does not claim a stable release.
