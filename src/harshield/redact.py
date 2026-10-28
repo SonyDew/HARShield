@@ -101,8 +101,8 @@ def _items(parent: dict, field: str, stats: list[int], *, kind: str) -> None:
         elif kind == "header" and isinstance(item.get("value"), str):
             if _AUTH_VALUE.match(item["value"]):
                 _replace(item, "value", stats)
-            elif name.lower() in {"link", "refresh"}:
-                # These headers can contain several URLs or nonstandard redirect syntax.
+            elif name.lower() in {"link", "refresh", "www-authenticate", "proxy-authenticate"}:
+                # Redirect and authentication challenge headers can contain credentials.
                 _replace(item, "value", stats)
             elif name.lower() in {"location", "content-location", "referer", "referrer"}:
                 item["value"] = _url(item["value"], stats)
