@@ -125,5 +125,45 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.target.stat().st_mode & 0o777, 0o600)
 
 
+    def test_check_does_not_create_output_or_modify_input(self):
+        before = self.source.read_bytes()
+        code, out, err = self.run_cli("--check")
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("fields require redaction", err)
+        self.assertEqual(self.source.read_bytes(), before)
+        self.assertFalse(self.target.exists())
+
+    @unittest.skipUnless(os.name == "posix", "POSIX hard-link behavior")
+    def test_force_on_hardlink_preserves_original(self):
+        os.link(self.source, self.target)
+        before = self.source.read_bytes()
+        code, _, _ = self.run_cli("--force", "--output", self.target)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.source.read_bytes(), before)
+        self.assertNotIn("secret", self.target.read_text())
+
+    @unittest.skipUnless(os.name == "posix", "POSIX symlink behavior")
+    def test_force_replaces_symlink_without_modifying_target(self):
+        victim = self.root / "victim.txt"
+        victim.write_text("keep this content", encoding="utf-8")
+        self.target.symlink_to(victim)
+        code, _, _ = self.run_cli("--force", "--output", self.target)
+        self.assertEqual(code, 0)
+        self.assertFalse(self.target.is_symlink())
+        self.assertEqual(victim.read_text(), "keep this content")
+        self.assertNotIn("secret", self.target.read_text())
+
+    def test_invalid_url_does_not_write_or_echo_secret(self):
+        self.source.write_text(json.dumps({"log": {"entries": [{
+            "request": {"url": "http://[secret/"},
+            "response": {},
+        }]}}), encoding="utf-8")
+        code, out, err = self.run_cli("--output", self.target)
+        self.assertEqual(code, 2)
+        self.assertNotIn("secret", out + err)
+        self.assertFalse(self.target.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
